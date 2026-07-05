@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useEffect, useRef, useState } from "react";
+import { ThemePicker } from "@/components/ThemePicker";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 
@@ -21,8 +22,8 @@ export default function Home() {
 
   if (!mounted) {
     return (
-      <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="w-2 h-2 bg-slate-600 rounded-full animate-bounce" />
+      <main className="min-h-screen bg-base flex items-center justify-center p-6">
+        <div className="w-2 h-2 bg-text-faint rounded-full animate-bounce" />
       </main>
     );
   }
@@ -124,11 +125,11 @@ function LoginScreen({ onLogin }: { onLogin: (username: string) => void }) {
   const isLogin = mode === "login";
 
   return (
-    <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-8 flex flex-col gap-5">
+    <main className="min-h-screen bg-base flex items-center justify-center p-6">
+      <div className="w-full max-w-md bg-surface border border-border rounded-2xl shadow-xl p-8 flex flex-col gap-5">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-slate-100">Welcome to Vibechat</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="text-2xl font-bold text-text">Welcome to Vibechat</h1>
+          <p className="text-sm text-text-muted">
             {isLogin
               ? "Sign in with your account to join the conversation."
               : "Create an account to start chatting."}
@@ -136,14 +137,14 @@ function LoginScreen({ onLogin }: { onLogin: (username: string) => void }) {
         </div>
 
         {/* Mode toggle */}
-        <div className="flex gap-1 bg-slate-800 p-1 rounded-lg">
+        <div className="flex gap-1 bg-elevated p-1 rounded-lg">
           <button
             type="button"
             onClick={() => switchMode("login")}
             className={`flex-1 text-sm font-medium px-4 py-2 rounded-md transition-colors ${
               isLogin
-                ? "bg-indigo-600 text-white"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-accent text-accent-text"
+                : "text-text-muted hover:text-text"
             }`}
           >
             Login
@@ -153,8 +154,8 @@ function LoginScreen({ onLogin }: { onLogin: (username: string) => void }) {
             onClick={() => switchMode("register")}
             className={`flex-1 text-sm font-medium px-4 py-2 rounded-md transition-colors ${
               !isLogin
-                ? "bg-indigo-600 text-white"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-accent text-accent-text"
+                : "text-text-muted hover:text-text"
             }`}
           >
             Register
@@ -163,24 +164,24 @@ function LoginScreen({ onLogin }: { onLogin: (username: string) => void }) {
 
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-400">Username</label>
+            <label className="text-xs font-medium text-text-muted">Username</label>
             <input
               ref={usernameRef}
               type="text"
               placeholder="Your username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="bg-input border border-border-strong rounded-lg px-4 py-3 text-sm text-text placeholder:text-text-faint focus:outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-400">Password</label>
+            <label className="text-xs font-medium text-text-muted">Password</label>
             <input
               type="password"
               placeholder="Your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="bg-input border border-border-strong rounded-lg px-4 py-3 text-sm text-text placeholder:text-text-faint focus:outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
           {error && (
@@ -191,7 +192,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string) => void }) {
           <button
             type="submit"
             disabled={submitting}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium px-5 py-3 rounded-lg cursor-pointer transition-colors disabled:cursor-not-allowed"
+            className="bg-accent hover:bg-accent-hover disabled:bg-elevated disabled:text-text-faint text-accent-text text-sm font-medium px-5 py-3 rounded-lg cursor-pointer transition-colors disabled:cursor-not-allowed"
           >
             {submitting
               ? isLogin
@@ -214,17 +215,66 @@ function Chat({
   author: string;
   onLogout: () => void;
 }) {
-  const messages = useQuery(api.messages.listMessages);
+  // Ensure the default channels exist on first load. Idempotent.
+  const ensureChannels = useMutation(api.messages.ensureDefaultChannels);
+  useEffect(() => {
+    void ensureChannels({});
+  }, [ensureChannels]);
+
+  const channels = useQuery(api.messages.listChannels);
+  // Persist the selected channel name so it survives reloads.
+  const [selectedChannelName, setSelectedChannelName] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    const saved = localStorage.getItem("vibechat:channel");
+    if (saved) setSelectedChannelName(saved);
+  }, []);
+  // Once channels load, fall back to the first one (general) if nothing saved
+  // or the saved name no longer exists.
+  useEffect(() => {
+    if (channels === undefined || selectedChannelName !== null) return;
+    if (channels.length > 0) {
+      setSelectedChannelName(channels[0].name);
+    }
+  }, [channels, selectedChannelName]);
+  // Validate the saved name against loaded channels; reset if missing.
+  useEffect(() => {
+    if (channels === undefined || selectedChannelName === null) return;
+    if (!channels.some((c) => c.name === selectedChannelName)) {
+      const fallback = channels[0]?.name ?? null;
+      setSelectedChannelName(fallback);
+      if (fallback) localStorage.setItem("vibechat:channel", fallback);
+    }
+  }, [channels, selectedChannelName]);
+
+  const selectedChannel =
+    channels?.find((c) => c.name === selectedChannelName) ?? null;
+
+  const messages = useQuery(
+    api.messages.listMessages,
+    selectedChannel ? { channelId: selectedChannel._id } : "skip",
+  );
   const sendMessage = useMutation(api.messages.sendMessage);
   const toggleReaction = useMutation(api.messages.toggleReaction);
+  const markRead = useMutation(api.messages.markRead);
   const setTyping = useMutation(api.messages.setTyping);
   const clearTyping = useMutation(api.messages.clearTyping);
-  const typingAuthors = useQuery(api.messages.listTyping, {
-    excludeAuthor: author,
-  }) ?? [];
+  const typingAuthors = useQuery(
+    api.messages.listTyping,
+    selectedChannel
+      ? { excludeAuthor: author, channelId: selectedChannel._id }
+      : "skip",
+  ) ?? [];
   const [body, setBody] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const lastTypingPing = useRef<number>(0);
+  // Track which messages we've already marked as read this session so we
+  // don't fire redundant markRead mutations. Reset when switching channels.
+  const markedReadRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    markedReadRef.current = new Set();
+  }, [selectedChannelName]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -233,13 +283,40 @@ function Chat({
     }
   }, [messages]);
 
+  // Mark visible messages as read using IntersectionObserver. Only messages
+  // authored by others are tracked — you don't need a read receipt for your
+  // own messages.
+  useEffect(() => {
+    const root = listRef.current;
+    if (!root || messages === undefined) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const messageId = (entry.target as HTMLElement).dataset.messageId;
+          if (!messageId) continue;
+          if (markedReadRef.current.has(messageId)) continue;
+          markedReadRef.current.add(messageId);
+          void markRead({ messageId: messageId as any, author });
+        }
+      },
+      { root, threshold: 0.5 },
+    );
+
+    const nodes = root.querySelectorAll<HTMLElement>("[data-message-id]");
+    nodes.forEach((n) => observer.observe(n));
+    return () => observer.disconnect();
+  }, [messages, markRead, author]);
+
   // Heartbeat while typing: ping at most once per second.
   const onBodyChange = (value: string) => {
     setBody(value);
+    if (!selectedChannel) return;
     const now = Date.now();
     if (value.trim() && now - lastTypingPing.current > 1000) {
       lastTypingPing.current = now;
-      void setTyping({ author });
+      void setTyping({ author, channelId: selectedChannel._id });
     } else if (!value.trim()) {
       lastTypingPing.current = 0;
       void clearTyping({ author });
@@ -247,26 +324,86 @@ function Chat({
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 flex flex-col">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+    <main className="h-screen bg-base flex overflow-hidden">
+      {/* Channel sidebar */}
+      <aside className="w-56 shrink-0 border-r border-border bg-surface flex flex-col">
+        <div className="px-4 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-accent-text font-bold text-sm">
+              V
+            </div>
+            <h1 className="text-base font-semibold text-text">Vibechat</h1>
+          </div>
+          <p className="text-xs text-text-muted mt-1.5">
+            Signed in as{" "}
+            <span className="font-medium text-text">{author}</span>
+          </p>
+        </div>
+
+        <div className="px-3 py-2">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-faint px-1 mb-1">
+            Channels
+          </h2>
+          <nav className="flex flex-col gap-0.5">
+            {channels === undefined ? (
+              <span className="text-xs text-text-faint px-2 py-1">
+                Loading…
+              </span>
+            ) : (
+              channels.map((c) => {
+                const active = c.name === selectedChannelName;
+                return (
+                  <button
+                    key={c._id}
+                    onClick={() => {
+                      setSelectedChannelName(c.name);
+                      localStorage.setItem("vibechat:channel", c.name);
+                    }}
+                    className={`text-sm px-2 py-1.5 rounded-md text-left transition-colors ${
+                      active
+                        ? "bg-accent-soft text-accent-soft-text font-medium"
+                        : "text-text-muted hover:text-text hover:bg-elevated"
+                    }`}
+                  >
+                    <span className="opacity-60">#</span>
+                    {c.name}
+                  </button>
+                );
+              })
+            )}
+          </nav>
+        </div>
+
+        <div className="mt-auto p-3 border-t border-border">
+          <button
+            onClick={onLogout}
+            className="w-full text-xs text-text-muted hover:text-text border border-border hover:border-border-strong rounded-lg px-3 py-1.5 transition-colors"
+          >
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Chat area */}
+      <section className="flex-1 flex flex-col overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface/80 backdrop-blur shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
+          <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-accent-text font-bold">
             V
           </div>
           <div className="flex flex-col">
-            <h1 className="text-base font-semibold text-slate-100">Vibechat</h1>
-            <p className="text-xs text-slate-400">
+            <h1 className="text-base font-semibold text-text">
+              {selectedChannel ? `#${selectedChannel.name}` : "Vibechat"}
+            </h1>
+            <p className="text-xs text-text-muted">
               Signed in as{" "}
-              <span className="font-medium text-slate-300">{author}</span>
+              <span className="font-medium text-text">{author}</span>
             </p>
           </div>
         </div>
-        <button
-          onClick={onLogout}
-          className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg px-3 py-1.5 transition-colors"
-        >
-          Logout
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemePicker />
+        </div>
       </header>
 
       <div
@@ -275,20 +412,20 @@ function Chat({
       >
         {messages === undefined ? (
           <div className="m-auto flex items-center gap-2">
-            <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" />
+            <div className="w-2 h-2 bg-text-faint rounded-full animate-bounce" />
             <div
-              className="w-2 h-2 bg-slate-500 rounded-full animate-bounce"
+              className="w-2 h-2 bg-text-faint rounded-full animate-bounce"
               style={{ animationDelay: "0.1s" }}
             />
             <div
-              className="w-2 h-2 bg-slate-500 rounded-full animate-bounce"
+              className="w-2 h-2 bg-text-faint rounded-full animate-bounce"
               style={{ animationDelay: "0.2s" }}
             />
-            <span className="ml-2 text-sm text-slate-500">Loading messages…</span>
+            <span className="ml-2 text-sm text-text-faint">Loading messages…</span>
           </div>
         ) : messages.length === 0 ? (
           <div className="m-auto text-center">
-            <p className="text-slate-400 text-sm">
+            <p className="text-text-muted text-sm">
               No messages yet. Say hello 👋
             </p>
           </div>
@@ -296,6 +433,8 @@ function Chat({
           messages.map((msg) => {
             const isMe = msg.author === author;
             const reactions = msg.reactions ?? [];
+            const readBy = msg.readBy ?? [];
+            const otherReaders = readBy.filter((a) => a !== msg.author);
             const reactionCounts = reactions.reduce<Record<string, string[]>>(
               (acc, r) => {
                 (acc[r.emoji] ??= []).push(r.author);
@@ -306,15 +445,16 @@ function Chat({
             return (
               <div
                 key={msg._id}
+                data-message-id={msg._id}
                 className={`group flex flex-col gap-1 max-w-[80%] ${
                   isMe ? "self-end items-end" : "self-start items-start"
                 }`}
               >
                 {!isMe && (
-                  <span className="text-xs font-semibold text-slate-400 px-2 flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-text-muted px-2 flex items-center gap-1.5">
                     {msg.author}
                     {msg.bot && (
-                      <span className="text-[9px] font-bold uppercase tracking-wide bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded px-1 py-0.5">
+                      <span className="text-[9px] font-bold uppercase tracking-wide bg-accent-soft text-accent-soft-text border border-accent-soft-border rounded px-1 py-0.5">
                         Bot
                       </span>
                     )}
@@ -323,14 +463,14 @@ function Chat({
                 <div
                   className={`rounded-2xl px-4 py-2 text-sm shadow-sm ${
                     isMe
-                      ? "bg-indigo-600 text-white rounded-br-sm"
-                      : "bg-slate-800 text-slate-100 rounded-bl-sm border border-slate-700"
+                      ? "bg-bubble-me text-bubble-me-text rounded-br-sm"
+                      : "bg-bubble-other text-bubble-other-text rounded-bl-sm border border-bubble-other-border"
                   }`}
                 >
                   <p className="whitespace-pre-wrap break-words">{msg.body}</p>
                   <p
                     className={`text-[10px] mt-1 ${
-                      isMe ? "text-indigo-200" : "text-slate-400"
+                      isMe ? "text-bubble-me-text/70" : "text-text-faint"
                     }`}
                   >
                     {new Date(msg.createdAt).toLocaleTimeString([], {
@@ -357,8 +497,8 @@ function Chat({
                           }
                           className={`text-xs rounded-full px-2 py-0.5 border transition-colors ${
                             reacted
-                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                              : "bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500"
+                              ? "bg-accent-soft border-accent-soft-border text-accent-soft-text"
+                              : "bg-elevated border-border text-text-muted hover:border-border-strong"
                           }`}
                         >
                           {emoji} {authors.length}
@@ -380,13 +520,26 @@ function Chat({
                           emoji,
                         })
                       }
-                      className="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-full w-7 h-7 flex items-center justify-center transition-colors"
+                      className="text-sm bg-elevated hover:bg-border-strong border border-border rounded-full w-7 h-7 flex items-center justify-center transition-colors"
                       aria-label={`React with ${emoji}`}
                     >
                       {emoji}
                     </button>
                   ))}
                 </div>
+
+                {/* Read receipts: show who has seen this message. For your
+                    own messages, list the other users who've read it. For
+                    others' messages, show a subtle "You saw this" marker. */}
+                {otherReaders.length > 0 && (
+                  <div
+                    className={`text-[10px] text-text-faint px-2 ${
+                      isMe ? "text-right" : "text-left"
+                    }`}
+                  >
+                    Seen by {otherReaders.join(", ")}
+                  </div>
+                )}
               </div>
             );
           })
@@ -395,15 +548,15 @@ function Chat({
 
       <div className="px-4 pt-2 min-h-6">
         {typingAuthors.length > 0 && (
-          <p className="text-xs text-slate-400 flex items-center gap-1">
+          <p className="text-xs text-text-muted flex items-center gap-1">
             <span className="inline-flex gap-0.5">
-              <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce" />
+              <span className="w-1 h-1 bg-text-faint rounded-full animate-bounce" />
               <span
-                className="w-1 h-1 bg-slate-500 rounded-full animate-bounce"
+                className="w-1 h-1 bg-text-faint rounded-full animate-bounce"
                 style={{ animationDelay: "0.15s" }}
               />
               <span
-                className="w-1 h-1 bg-slate-500 rounded-full animate-bounce"
+                className="w-1 h-1 bg-text-faint rounded-full animate-bounce"
                 style={{ animationDelay: "0.3s" }}
               />
             </span>
@@ -419,12 +572,16 @@ function Chat({
       </div>
 
       <form
-        className="px-4 py-4 border-t border-slate-800 bg-slate-900/80 backdrop-blur flex items-center gap-2"
+        className="px-4 py-4 border-t border-border bg-surface/80 backdrop-blur flex items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           const trimmed = body.trim();
-          if (!trimmed) return;
-          void sendMessage({ author, body: trimmed });
+          if (!trimmed || !selectedChannel) return;
+          void sendMessage({
+            author,
+            body: trimmed,
+            channelId: selectedChannel._id,
+          });
           void clearTyping({ author });
           lastTypingPing.current = 0;
           setBody("");
@@ -434,19 +591,22 @@ function Chat({
       >
         <input
           type="text"
-          placeholder="Type a message…"
+          placeholder={
+            selectedChannel ? `Message #${selectedChannel.name}` : "Type a message…"
+          }
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}
-          className="flex-1 bg-slate-800 border border-slate-700 rounded-full px-5 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="flex-1 bg-input border border-border-strong rounded-full px-5 py-3 text-sm text-text placeholder:text-text-faint focus:outline-none focus:ring-2 focus:ring-accent"
         />
         <button
           type="submit"
-          disabled={!body.trim()}
-          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium px-5 py-3 rounded-full cursor-pointer transition-colors disabled:cursor-not-allowed"
+          disabled={!body.trim() || !selectedChannel}
+          className="bg-accent hover:bg-accent-hover disabled:bg-elevated disabled:text-text-faint text-accent-text text-sm font-medium px-5 py-3 rounded-full cursor-pointer transition-colors disabled:cursor-not-allowed"
         >
           Send
         </button>
       </form>
+      </section>
     </main>
   );
 }

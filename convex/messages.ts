@@ -7,7 +7,7 @@ import {
   internalMutation,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { Doc } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 
 // Look up a user by username. Returns the document (with password) so the
 // client can verify credentials. NOTE: plaintext password comparison is
@@ -41,12 +41,75 @@ export const register = mutation({
   },
 });
 
-export const listMessages = query({
+// Default channels seeded on first deploy. Names are stored without the
+// leading "#"; the UI adds it for display.
+const DEFAULT_CHANNELS = ["general", "random", "help"];
+
+// Idempotent: inserts any default channels that don't yet exist, then
+// backfills any legacy messages/typing rows that predate channels by
+// assigning them to #general. Safe to call on every app load.
+export const ensureDefaultChannels = mutation({
   args: {},
   handler: async (ctx) => {
+    let generalId: Id<"channels"> | null = null;
+    for (const name of DEFAULT_CHANNELS) {
+      const existing = await ctx.db
+        .query("channels")
+        .withIndex("by_name", (q) => q.eq("name", name))
+        .unique();
+      if (existing) {
+        if (name === "general") generalId = existing._id;
+      } else {
+        const id = await ctx.db.insert("channels", { name });
+        if (name === "general") generalId = id;
+      }
+    }
+
+    // Backfill legacy messages without a channelId onto #general.
+    if (generalId) {
+      const orphans = await ctx.db.query("messages").collect();
+      for (const m of orphans) {
+        if (m.channelId === undefined) {
+          await ctx.db.patch("messages", m._id, { channelId: generalId });
+        }
+      }
+      // Same for typing rows.
+      const orphanTyping = await ctx.db.query("typing").collect();
+      for (const t of orphanTyping) {
+        if (t.channelId === undefined) {
+          await ctx.db.patch("typing", t._id, { channelId: generalId });
+        }
+      }
+    }
+  },
+});
+
+// List all channels, ordered by name. Used to render the sidebar.
+export const listChannels = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("channels").order("asc").collect();
+  },
+});
+
+// Look up a single channel by name. Returns null if not found.
+export const getChannelByName = query({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    const channel = await ctx.db
+      .query("channels")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .unique();
+    return channel ?? null;
+  },
+});
+
+export const listMessages = query({
+  args: { channelId: v.id("channels") },
+  handler: async (ctx, args) => {
     const messages = await ctx.db
       .query("messages")
-      .withIndex("by_createdAt")
+      .withIndex("by_channel_and_createdAt", (q) => q.eq("channelId", args.channelId))
       .order("asc")
       .collect();
     // Join reactions for each message in a single round-trip.
@@ -56,7 +119,15 @@ export const listMessages = query({
           .query("reactions")
           .withIndex("by_message", (q) => q.eq("messageId", msg._id))
           .collect();
-        return { ...msg, reactions };
+        const reads = await ctx.db
+          .query("reads")
+          .withIndex("by_message", (q) => q.eq("messageId", msg._id))
+          .collect();
+        return {
+          ...msg,
+          reactions,
+          readBy: reads.map((r) => r.author),
+        };
       }),
     );
     return withReactions;
@@ -67,12 +138,14 @@ export const sendMessage = mutation({
   args: {
     author: v.string(),
     body: v.string(),
+    channelId: v.id("channels"),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("messages", {
       author: args.author,
       body: args.body,
       createdAt: Date.now(),
+      channelId: args.channelId,
       bot: false,
     });
 
@@ -84,8 +157,34 @@ export const sendMessage = mutation({
     if (args.body.includes("?")) {
       await ctx.scheduler.runAfter(1500, internal.messages.replyAsBot, {
         triggerMessage: args.body,
+        channelId: args.channelId,
       });
     }
+  },
+});
+
+// Mark a message as read by `author`. Idempotent: if a read receipt already
+// exists for this (message, author) pair, it's a no-op.
+export const markRead = mutation({
+  args: {
+    messageId: v.id("messages"),
+    author: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("reads")
+      .withIndex("by_message_and_author", (q) =>
+        q.eq("messageId", args.messageId).eq("author", args.author),
+      )
+      .unique();
+    if (existing) {
+      return;
+    }
+    await ctx.db.insert("reads", {
+      messageId: args.messageId,
+      author: args.author,
+      readAt: Date.now(),
+    });
   },
 });
 
@@ -93,11 +192,11 @@ export const sendMessage = mutation({
 // the last N messages (oldest first) so the bot can see the conversation
 // leading up to the question. Internal so clients can't call it directly.
 export const listRecentMessages = internalQuery({
-  args: { limit: v.number() },
+  args: { limit: v.number(), channelId: v.id("channels") },
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("messages")
-      .withIndex("by_createdAt")
+      .withIndex("by_channel_and_createdAt", (q) => q.eq("channelId", args.channelId))
       .order("desc")
       .take(args.limit);
     // Reverse to chronological order for the model.
@@ -116,12 +215,14 @@ export const sendBotMessage = internalMutation({
   args: {
     author: v.string(),
     body: v.string(),
+    channelId: v.id("channels"),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("messages", {
       author: args.author,
       body: args.body,
       createdAt: Date.now(),
+      channelId: args.channelId,
       bot: true,
     });
   },
@@ -145,7 +246,7 @@ const BOT_SYSTEM_PROMPT =
 const BOT_CONTEXT_LIMIT = 8;
 
 export const replyAsBot = internalAction({
-  args: { triggerMessage: v.string() },
+  args: { triggerMessage: v.string(), channelId: v.id("channels") },
   handler: async (ctx, args): Promise<void> => {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -158,6 +259,7 @@ export const replyAsBot = internalAction({
     // which was just inserted before this action was scheduled).
     const recent = await ctx.runQuery(internal.messages.listRecentMessages, {
       limit: BOT_CONTEXT_LIMIT,
+      channelId: args.channelId,
     });
 
     // Build the conversation for the model: system prompt, then the recent
@@ -204,6 +306,7 @@ export const replyAsBot = internalAction({
     await ctx.runMutation(internal.messages.sendBotMessage, {
       author: BOT_NAME,
       body: reply,
+      channelId: args.channelId,
     });
   },
 });
@@ -241,9 +344,9 @@ export const toggleReaction = mutation({
 // How long a typing indicator stays "active" after the last heartbeat.
 const TYPING_TIMEOUT_MS = 5000;
 
-// Upsert the typing row for `author`, refreshing the heartbeat.
+// Upsert the typing row for `author` in a channel, refreshing the heartbeat.
 export const setTyping = mutation({
-  args: { author: v.string() },
+  args: { author: v.string(), channelId: v.id("channels") },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("typing")
@@ -251,9 +354,16 @@ export const setTyping = mutation({
       .unique();
     const now = Date.now();
     if (existing) {
-      await ctx.db.patch("typing", existing._id, { lastSeen: now });
+      await ctx.db.patch("typing", existing._id, {
+        lastSeen: now,
+        channelId: args.channelId,
+      });
     } else {
-      await ctx.db.insert("typing", { author: args.author, lastSeen: now });
+      await ctx.db.insert("typing", {
+        author: args.author,
+        channelId: args.channelId,
+        lastSeen: now,
+      });
     }
   },
 });
@@ -272,14 +382,17 @@ export const clearTyping = mutation({
   },
 });
 
-// Return authors who have an active typing heartbeat (excluding the caller).
+// Return authors who have an active typing heartbeat in a channel (excluding
+// the caller).
 export const listTyping = query({
-  args: { excludeAuthor: v.string() },
+  args: { excludeAuthor: v.string(), channelId: v.id("channels") },
   handler: async (ctx, args) => {
     const cutoff = Date.now() - TYPING_TIMEOUT_MS;
     const rows = await ctx.db
       .query("typing")
-      .withIndex("by_lastSeen", (q) => q.gte("lastSeen", cutoff))
+      .withIndex("by_channel_and_lastSeen", (q) =>
+        q.eq("channelId", args.channelId).gte("lastSeen", cutoff),
+      )
       .collect();
     return rows
       .filter((r) => r.author !== args.excludeAuthor)

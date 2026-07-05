@@ -1,26 +1,156 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   Theme system
+   ------------------------------------------------------------
+   Semantic color tokens are defined per theme via [data-theme]
+   selectors on <html>. They are mapped to Tailwind utilities
+   (bg-base, text-text, border-border, bg-accent, ...) through
+   the @theme inline block below, so components can use semantic
+   classes that automatically follow the active theme.
+   ============================================================ */
+
+:root,
+[data-theme="midnight"] {
+  --bg-base: #020617;      /* slate-950 */
+  --bg-surface: #0f172a;   /* slate-900 */
+  --bg-elevated: #1e293b;  /* slate-800 */
+  --bg-input: #1e293b;     /* slate-800 */
+  --border: #1e293b;       /* slate-800 */
+  --border-strong: #334155;/* slate-700 */
+  --text: #f1f5f9;         /* slate-100 */
+  --text-muted: #94a3b8;   /* slate-400 */
+  --text-faint: #64748b;   /* slate-500 */
+  --accent: #4f46e5;       /* indigo-600 */
+  --accent-hover: #6366f1; /* indigo-500 */
+  --accent-text: #ffffff;
+  --accent-soft: rgba(79, 70, 229, 0.2);
+  --accent-soft-border: rgba(99, 102, 241, 0.4);
+  --accent-soft-text: #a5b4fc;
+  --bubble-me: #4f46e5;
+  --bubble-me-text: #ffffff;
+  --bubble-other: #1e293b;
+  --bubble-other-text: #f1f5f9;
+  --bubble-other-border: #334155;
+}
+
+[data-theme="ocean"] {
+  --bg-base: #0c1929;
+  --bg-surface: #102a43;
+  --bg-elevated: #1c3a5c;
+  --bg-input: #1c3a5c;
+  --border: #1c3a5c;
+  --border-strong: #2a4d6e;
+  --text: #e0f2fe;
+  --text-muted: #7dd3fc;
+  --text-faint: #4a90b8;
+  --accent: #0891b2;       /* cyan-600 */
+  --accent-hover: #06b6d4; /* cyan-500 */
+  --accent-text: #ffffff;
+  --accent-soft: rgba(8, 145, 178, 0.2);
+  --accent-soft-border: rgba(6, 182, 212, 0.4);
+  --accent-soft-text: #67e8f9;
+  --bubble-me: #0891b2;
+  --bubble-me-text: #ffffff;
+  --bubble-other: #1c3a5c;
+  --bubble-other-text: #e0f2fe;
+  --bubble-other-border: #2a4d6e;
+}
+
+[data-theme="sunset"] {
+  --bg-base: #1a0a14;
+  --bg-surface: #2a0f1e;
+  --bg-elevated: #3d1830;
+  --bg-input: #3d1830;
+  --border: #3d1830;
+  --border-strong: #5a2540;
+  --text: #fef3c7;
+  --text-muted: #fbbf24;
+  --text-faint: #b8865c;
+  --accent: #db2777;       /* pink-600 */
+  --accent-hover: #ec4899; /* pink-500 */
+  --accent-text: #ffffff;
+  --accent-soft: rgba(219, 39, 119, 0.2);
+  --accent-soft-border: rgba(236, 72, 153, 0.4);
+  --accent-soft-text: #f9a8d4;
+  --bubble-me: #db2777;
+  --bubble-me-text: #ffffff;
+  --bubble-other: #3d1830;
+  --bubble-other-text: #fef3c7;
+  --bubble-other-border: #5a2540;
+}
+
+[data-theme="forest"] {
+  --bg-base: #0a1a0f;
+  --bg-surface: #122617;
+  --bg-elevated: #1d3a24;
+  --bg-input: #1d3a24;
+  --border: #1d3a24;
+  --border-strong: #2d5235;
+  --text: #dcfce7;
+  --text-muted: #86efac;
+  --text-faint: #5a8a6a;
+  --accent: #16a34a;       /* green-600 */
+  --accent-hover: #22c55e; /* green-500 */
+  --accent-text: #ffffff;
+  --accent-soft: rgba(22, 163, 74, 0.2);
+  --accent-soft-border: rgba(34, 197, 94, 0.4);
+  --accent-soft-text: #86efac;
+  --bubble-me: #16a34a;
+  --bubble-me-text: #ffffff;
+  --bubble-other: #1d3a24;
+  --bubble-other-text: #dcfce7;
+  --bubble-other-border: #2d5235;
+}
+
+[data-theme="light"] {
+  --bg-base: #f8fafc;      /* slate-50 */
+  --bg-surface: #ffffff;
+  --bg-elevated: #f1f5f9;  /* slate-100 */
+  --bg-input: #f1f5f9;
+  --border: #e2e8f0;       /* slate-200 */
+  --border-strong: #cbd5e1;/* slate-300 */
+  --text: #0f172a;         /* slate-900 */
+  --text-muted: #64748b;   /* slate-500 */
+  --text-faint: #94a3b8;   /* slate-400 */
+  --accent: #4f46e5;       /* indigo-600 */
+  --accent-hover: #4338ca; /* indigo-700 */
+  --accent-text: #ffffff;
+  --accent-soft: rgba(79, 70, 229, 0.12);
+  --accent-soft-border: rgba(79, 70, 229, 0.3);
+  --accent-soft-text: #4f46e5;
+  --bubble-me: #4f46e5;
+  --bubble-me-text: #ffffff;
+  --bubble-other: #ffffff;
+  --bubble-other-text: #0f172a;
+  --bubble-other-border: #e2e8f0;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-base: var(--bg-base);
+  --color-surface: var(--bg-surface);
+  --color-elevated: var(--bg-elevated);
+  --color-input: var(--bg-input);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-bubble-me: var(--bubble-me);
+  --color-bubble-me-text: var(--bubble-me-text);
+  --color-bubble-other: var(--bubble-other);
+  --color-bubble-other-text: var(--bubble-other-text);
+  --color-bubble-other-border: var(--bubble-other-border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--text);
+  background: var(--bg-base);
   font-family: Arial, Helvetica, sans-serif;
 }
